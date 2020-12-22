@@ -1,0 +1,179 @@
+Доделываю дз1
+3.* Установить Apache и научить NGINX переключаться между ним и PHP-FPM. 
+Посмотреть, сколько ресурсов потребляет один и тот же скрипт при работе с разными интерпретаторами.
+
+sudo yum install httpd
+
+конфигурация Apache
+
+sudo nano /etc/httpd/conf/httpd.conf
+ставим порт Listen 8080
+заупскаем sudo systemctl start httpd
+проверяем sudo systemctl status httpd
+httpd.service - The Apache HTTP Server
+   Loaded: loaded (/usr/lib/systemd/system/httpd.service; disabled; vendor preset: disabled)
+   Active: active (running) since Tue 2020-12-22 22:00:10 UTC; 5s ago
+   
+настраиваем порт соответственно в ВМ
+запускаем в браузере (скриншот apache)
+
+настраиваем права и руты apache
+sudo nano /var/www/html/index.html
+sudo nano /etc/httpd/conf/httpd.conf
+sudo mkdir /var/www/asite.local/
+sudo mv /var/www/html/index.* /var/www/asite.local/
+sudo chown -R vagrant:vagrant /var/www/asite.local/
+
+sudo nano /etc/httpd/conf/httpd.conf
+      DocumentRoot "/var/www/mysite.local"
+      
+sudo systemctl restart httpd      
+(скриншот apache2)
+
+учим apache понимать php 
+sudo yum install php72-mod_php
+sudo systemctl restart httpd 
+(скриншот apache3)
+
+дальше идем в nging conf.d  mysite.local.conf
+
+upstream myapp {
+    server 127.0.0.1:8081;
+    server 127.0.0.1:8080;
+}
+server {
+    listen 80;
+    location / {
+        proxy_pass http://myapp;
+    }
+}
+server {
+    # указываем 8081 порт для соединения
+    listen 8081;
+    # нужно указать, какому доменному имени принадлежит наш конфиг
+    server_name _;
+
+    # задаем корневую директорию
+    root /var/www/mysite.local;
+
+    index index.php;
+
+    location ~* .(jpg|jpeg|gif|css|png|js|ico|html)$ {
+        access_log off;
+        expires max;
+    }
+
+    # помним про единую точку доступа
+    # все запросы заворачиваются в корневую директорию root на index.php
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # и наконец правило обращения к php-fpm
+    location ~* .php$ {
+        try_files $uri = 404;
+        fastcgi_split_path_info ^(.+.php)(/.+)$;
+        fastcgi_pass unix:/var/run/php-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+}
+
+
+далее прокидываем порт 8082 на 8081 в ВМ
+sudo systemctl restart nginx
+
+(скриншот nginx) на порту 8082
+
+
+// ============================================================================= //
+Домашнее задание 2
+
+1. Расширить функциональность логирования используемой памяти. 
+Как показывать изменения в используемой памяти между разными шагами логирования?
+
+2. В существующем проекте при помощи XDebug подключить функциональность опционального логирования. 
+Собрать информацию о времени генерации, переменных и потребляемых ресурсах при генерации одной из страниц.
+
+
+sudo yum install composer
+php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+php composer-setup.php
+php -r "unlink('composer-setup.php');"
+sudo mv composer.phar /usr/bin/composer
+
+cd /var/www/mysite.local/
+composer require monolog/monolog
+
+прописываем в index.php
+<?php
+
+require_once('vendor/autoload.php');
+
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
+$mainLog = new Logger('main');
+
+$sh = new StreamHandler('log/main.log', Logger::WARNING);
+$mainLog->pushHandler($sh);
+
+$mainLog->warning('Hello');
+$mainLog->error('world');
+?>
+
+выдвем права nginx
+sudo chown -R nginx:nginx /var/www/mysite.local/log/
+sudo chmod 664 /var/www/mysite.local/log/main.log
+
+сомтрим результат cat /var/www/mysite.local/log/main.log
+
+main.WARNING: Hello [] []
+main.ERROR: world [] []
+main.WARNING: Hello [] []
+main.ERROR: world [] []
+main.WARNING: Hello [] []
+main.ERROR: world [] []
+
+замеряем время index.php
+
+<?php
+
+require_once('vendor/autoload.php');
+
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
+$start = time();
+
+$mainLog = new Logger('main');
+
+$sh = new StreamHandler('log/main.log', Logger::WARNING);
+$mainLog->pushHandler($sh);
+
+sleep(3);
+
+$mainLog->warning('Hello');
+$mainLog->error('world');
+
+$end = time();
+
+$mainLog->warning($end - $start);
+?>
+
+
+результат:
+main.WARNING: 3 [] []
+
+
+
+
+
+
+
+
+
+
+
+
