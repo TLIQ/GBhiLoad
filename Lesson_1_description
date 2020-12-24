@@ -1,0 +1,161 @@
+1. Развернуть на виртуальной машине выбранную сборку.
+2. Попробовать создать несколько PHP-скриптов в системе.
+
+Увы не успела записать пока делала, постараюсь воспроизвести.
+
+создала vagrant файл (приложен к уроку)
+
+
+запустила ВМ (скриншот VM)
+пробросила необходимые порты 2222 и 8080
+
+подключаюсь по ssh
+ssh vagrant@127.0.0.1 -p 2222
+
+так же настроила пользователя root
+vi /etc/ssh/sshd_config 
+PasswordAuthentication yes
+
+рестартую
+service sshd restart
+
+Установила необходимое ПО 
+yum install epel-release
+rpm -Uvh http://rpms.remirepo.net/enterprise/remi-release-7.rpm
+yum install nginx nano php72 php72-php-fpm
+
+делаем для удобства ссылку для команд PHP
+ln —s /usr/bin/php72 /usr/bin/php 
+
+добавляем настройки php-fpm
+
+sudo nano /etc/opt/remi/php72/php-fpm.d/www.conf
+
+меняем
+user = NGINX
+group = NGINX
+
+listen = /var/run/php-fpm.sock
+
+listen.owner = nobody
+listen.group = nobody
+listen.mode = 0660
+
+отключаем farewall senlinux
+setenforce 0
+nano /etc/selinux/config
+SELINUX=disabled
+
+Создаем папку существующего проекта
+
+mkdir /var/www/mysite.local
+
+даем права
+chown vagrant:NGINX /var/www/mysite.local/
+chmod 0775 /var/www/mysite.local/
+
+
+настраиваем nginx
+
+sudo nano  /etc/nginx/conf.d/mysite.local.conf
+настройки прикреплены в файле mysite.local.conf
+
+идем в хосты на локальной машине и прописываем
+127.0.0.1 mysite.local
+
+создаем в рабочек папке /var/www/mysite.local
+файл index.php
+
+<?php
+  phpinfo();
+?>
+
+страница загрузилась, но скриншот я не могу показать, есть скриншоты более поздние из задания 3
+
+3.* Установить Apache и научить NGINX переключаться между ним и PHP-FPM. 
+Посмотреть, сколько ресурсов потребляет один и тот же скрипт при работе с разными интерпретаторами.
+
+sudo yum install httpd
+
+конфигурация Apache
+
+sudo nano /etc/httpd/conf/httpd.conf
+ставим порт Listen 8080
+заупскаем sudo systemctl start httpd
+проверяем sudo systemctl status httpd
+httpd.service - The Apache HTTP Server
+   Loaded: loaded (/usr/lib/systemd/system/httpd.service; disabled; vendor preset: disabled)
+   Active: active (running) since Tue 2020-12-22 22:00:10 UTC; 5s ago
+   
+настраиваем порт соответственно в ВМ
+запускаем в браузере (скриншот apache)
+
+настраиваем права и руты apache
+sudo nano /var/www/html/index.html
+sudo nano /etc/httpd/conf/httpd.conf
+sudo mkdir /var/www/asite.local/
+sudo mv /var/www/html/index.* /var/www/asite.local/
+sudo chown -R vagrant:vagrant /var/www/asite.local/
+
+sudo nano /etc/httpd/conf/httpd.conf
+      DocumentRoot "/var/www/mysite.local"
+      
+sudo systemctl restart httpd      
+(скриншот apache2)
+
+учим apache понимать php 
+sudo yum install php72-mod_php
+sudo systemctl restart httpd 
+(скриншот apache3)
+
+дальше идем в nging conf.d  mysite.local.conf
+
+upstream myapp {
+    server 127.0.0.1:8081;
+    server 127.0.0.1:8080;
+}
+server {
+    listen 80;
+    location / {
+        proxy_pass http://myapp;
+    }
+}
+server {
+    # указываем 8081 порт для соединения
+    listen 8081;
+    # нужно указать, какому доменному имени принадлежит наш конфиг
+    server_name _;
+
+    # задаем корневую директорию
+    root /var/www/mysite.local;
+
+    index index.php;
+
+    location ~* .(jpg|jpeg|gif|css|png|js|ico|html)$ {
+        access_log off;
+        expires max;
+    }
+
+    # помним про единую точку доступа
+    # все запросы заворачиваются в корневую директорию root на index.php
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # и наконец правило обращения к php-fpm
+    location ~* .php$ {
+        try_files $uri = 404;
+        fastcgi_split_path_info ^(.+.php)(/.+)$;
+        fastcgi_pass unix:/var/run/php-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+}
+
+
+далее прокидываем порт 8082 на 8081 в ВМ
+sudo systemctl restart nginx
+
+(скриншот nginx) на порту 8082
+
