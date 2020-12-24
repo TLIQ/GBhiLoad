@@ -1,0 +1,207 @@
+
+// ============================================================================= //
+Домашнее задание 2
+
+1. Расширить функциональность логирования используемой памяти. 
+Как показывать изменения в используемой памяти между разными шагами логирования?
+
+2. В существующем проекте при помощи XDebug подключить функциональность опционального логирования. 
+Собрать информацию о времени генерации, переменных и потребляемых ресурсах при генерации одной из страниц.
+
+
+sudo yum install composer
+php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+php composer-setup.php
+php -r "unlink('composer-setup.php');"
+sudo mv composer.phar /usr/bin/composer
+
+cd /var/www/mysite.local/
+composer require monolog/monolog
+
+прописываем в index.php
+<?php
+
+require_once('vendor/autoload.php');
+
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+
+$mainLog = new Logger('main');
+
+$sh = new StreamHandler('log/main.log', Logger::WARNING);
+$mainLog->pushHandler($sh);
+
+$mainLog->warning('Hello');
+$mainLog->error('world');
+?>
+
+выдвем права nginx
+sudo chown -R nginx:nginx /var/www/mysite.local/log/
+sudo chmod 664 /var/www/mysite.local/log/main.log
+
+сомтрим результат cat /var/www/mysite.local/log/main.log
+
+main.WARNING: Hello [] []
+main.ERROR: world [] []
+main.WARNING: Hello [] []
+main.ERROR: world [] []
+main.WARNING: Hello [] []
+main.ERROR: world [] []
+
+замеряем время index.php
+
+<?php
+
+      require_once('vendor/autoload.php');
+
+      use Monolog\Logger;
+      use Monolog\Handler\StreamHandler;
+
+      $start = time();
+
+      $mainLog = new Logger('main');
+
+      $sh = new StreamHandler('log/main.log', Logger::WARNING);
+      $mainLog->pushHandler($sh);
+
+      sleep(3);
+
+      $mainLog->warning('Hello');
+      $mainLog->error('world');
+
+      $end = time();
+
+      $mainLog->warning($end - $start);
+?>
+
+
+результат:
+main.WARNING: 3 [] []
+
+
+Устанавливаю xdebug
+
+sudo yum install php72-php-pecl-xdebug
+
+Конфигурирую xdebud
+
+sudo nano /etc/opt/remi/php72/php.d/15-xdebug.ini
+
+раскомментирую
+xdebug.max_nesting_level = 10
+sudo systemctl restart php72-php-fpm
+
+создаем рекурсию
+
+<?php
+
+      require_once('vendor/autoload.php');
+
+      error_reporting(E_ALL);
+      ini_set('display_errors', 1);
+
+      function req() {
+        echo 'ok';
+        req();
+      }
+      req();
+?>
+
+получаем результат (скриншот req_xdebug)
+отработал xdebug с 10-ти кратным вызовом рекурсивной функции
+
+идем снова sudo nano /etc/opt/remi/php72/php.d/15-xdebug.ini
+Дописываем настройки xdebug
+xdebug.dump_once = true
+xdebug.dump_globals = true
+xdebug.dump_undefined = true
+xdebug.dump.SERVER = REQUEST_METHOD,REQUEST_URI,HTTP_USER_AGENT
+xdebug.dump.REQUEST = *
+xdebug.show_error_trace = 1
+xdebug.show_local_vars = 1
+xdebug.max_nesting_level = 60
+
+sudo systemctl restart php72-php-fpm
+
+Дописываем рекурсию
+<?php
+require_once('vendor/autoload.php');
+
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+function req($count) {
+  $count += 1;
+  if ($count < 50) {
+    req($count);
+  } else {
+    trigger_error("off");
+  }
+
+}
+req(1);
+?>
+
+получаем результат:
+$count =
+/var/www/mysite.local/index.php:14:int 50
+
+на строке 51 
+51	0.0017	467312	trigger_error ( )
+
+сообщение
+Notice: off in /var/www/mysite.local/index.php on line 14
+
+Опять идем в настройки xdebug
+xdebug.trace_format = 0
+xdebug.auto_trace = 1
+xdebug.trace_output_dir = /var/www/mysite.local/log/traces
+xdebug.trace_output_name = trace.%c
+xdebug.collect_params = 4
+xdebug.collect_includes = 1
+xdebug.collect_return = 1
+xdebug.show_mem_delta = 1
+
+логирование (прикрепляю файлы логирования)
+
+Дополнительно добавляю вариант логирования генерации переменных
+
+<?php
+      use Monolog\Logger;
+      use Monolog\Handler\StreamHandler;
+
+      require_once('vendor/autoload.php');
+      error_reporting(E_ALL);
+      ini_set('display_errors', 1);
+
+
+      $start = microtime(true);
+      $mainLog = new Logger('main');
+
+      $sh = new StreamHandler('log/main.log', Logger::INFO);
+      $mainLog->pushHandler($sh);
+
+      $end = microtime(true);
+      sleep(3);
+
+      $memory = memory_get_usage();
+      $mainLog->info('После пробуждения занято памяти: ' . $memory);
+
+
+      $string1 = 'Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut';
+
+      $string2 = 'Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.';
+
+      echo $string1;
+      echo $string2;
+
+      $mainLog->debug('Генерация переменных заняла времени' . ($end - $start));
+
+      $end_script = microtime(true);
+      $mainLog->debug('Работа скрипта завершена за время' . ($end_script - $start));
+?>
+
+
+
+
+
