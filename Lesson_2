@@ -1,91 +1,3 @@
-Доделываю дз1
-3.* Установить Apache и научить NGINX переключаться между ним и PHP-FPM. 
-Посмотреть, сколько ресурсов потребляет один и тот же скрипт при работе с разными интерпретаторами.
-
-sudo yum install httpd
-
-конфигурация Apache
-
-sudo nano /etc/httpd/conf/httpd.conf
-ставим порт Listen 8080
-заупскаем sudo systemctl start httpd
-проверяем sudo systemctl status httpd
-httpd.service - The Apache HTTP Server
-   Loaded: loaded (/usr/lib/systemd/system/httpd.service; disabled; vendor preset: disabled)
-   Active: active (running) since Tue 2020-12-22 22:00:10 UTC; 5s ago
-   
-настраиваем порт соответственно в ВМ
-запускаем в браузере (скриншот apache)
-
-настраиваем права и руты apache
-sudo nano /var/www/html/index.html
-sudo nano /etc/httpd/conf/httpd.conf
-sudo mkdir /var/www/asite.local/
-sudo mv /var/www/html/index.* /var/www/asite.local/
-sudo chown -R vagrant:vagrant /var/www/asite.local/
-
-sudo nano /etc/httpd/conf/httpd.conf
-      DocumentRoot "/var/www/mysite.local"
-      
-sudo systemctl restart httpd      
-(скриншот apache2)
-
-учим apache понимать php 
-sudo yum install php72-mod_php
-sudo systemctl restart httpd 
-(скриншот apache3)
-
-дальше идем в nging conf.d  mysite.local.conf
-
-upstream myapp {
-    server 127.0.0.1:8081;
-    server 127.0.0.1:8080;
-}
-server {
-    listen 80;
-    location / {
-        proxy_pass http://myapp;
-    }
-}
-server {
-    # указываем 8081 порт для соединения
-    listen 8081;
-    # нужно указать, какому доменному имени принадлежит наш конфиг
-    server_name _;
-
-    # задаем корневую директорию
-    root /var/www/mysite.local;
-
-    index index.php;
-
-    location ~* .(jpg|jpeg|gif|css|png|js|ico|html)$ {
-        access_log off;
-        expires max;
-    }
-
-    # помним про единую точку доступа
-    # все запросы заворачиваются в корневую директорию root на index.php
-    location / {
-        try_files $uri $uri/ /index.php?$query_string;
-    }
-
-    # и наконец правило обращения к php-fpm
-    location ~* .php$ {
-        try_files $uri = 404;
-        fastcgi_split_path_info ^(.+.php)(/.+)$;
-        fastcgi_pass unix:/var/run/php-fpm.sock;
-        fastcgi_index index.php;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-        include fastcgi_params;
-    }
-}
-
-
-далее прокидываем порт 8082 на 8081 в ВМ
-sudo systemctl restart nginx
-
-(скриншот nginx) на порту 8082
-
 
 // ============================================================================= //
 Домашнее задание 2
@@ -140,26 +52,26 @@ main.ERROR: world [] []
 
 <?php
 
-require_once('vendor/autoload.php');
+      require_once('vendor/autoload.php');
 
-use Monolog\Logger;
-use Monolog\Handler\StreamHandler;
+      use Monolog\Logger;
+      use Monolog\Handler\StreamHandler;
 
-$start = time();
+      $start = time();
 
-$mainLog = new Logger('main');
+      $mainLog = new Logger('main');
 
-$sh = new StreamHandler('log/main.log', Logger::WARNING);
-$mainLog->pushHandler($sh);
+      $sh = new StreamHandler('log/main.log', Logger::WARNING);
+      $mainLog->pushHandler($sh);
 
-sleep(3);
+      sleep(3);
 
-$mainLog->warning('Hello');
-$mainLog->error('world');
+      $mainLog->warning('Hello');
+      $mainLog->error('world');
 
-$end = time();
+      $end = time();
 
-$mainLog->warning($end - $start);
+      $mainLog->warning($end - $start);
 ?>
 
 
@@ -167,11 +79,127 @@ $mainLog->warning($end - $start);
 main.WARNING: 3 [] []
 
 
+Устанавливаю xdebug
+
+sudo yum install php72-php-pecl-xdebug
+
+Конфигурирую xdebud
+
+sudo nano /etc/opt/remi/php72/php.d/15-xdebug.ini
+
+раскомментирую
+xdebug.max_nesting_level = 10
+sudo systemctl restart php72-php-fpm
+
+создаем рекурсию
+
+<?php
+
+      require_once('vendor/autoload.php');
+
+      error_reporting(E_ALL);
+      ini_set('display_errors', 1);
+
+      function req() {
+        echo 'ok';
+        req();
+      }
+      req();
+?>
+
+получаем результат (скриншот req_xdebug)
+отработал xdebug с 10-ти кратным вызовом рекурсивной функции
+
+идем снова sudo nano /etc/opt/remi/php72/php.d/15-xdebug.ini
+Дописываем настройки xdebug
+xdebug.dump_once = true
+xdebug.dump_globals = true
+xdebug.dump_undefined = true
+xdebug.dump.SERVER = REQUEST_METHOD,REQUEST_URI,HTTP_USER_AGENT
+xdebug.dump.REQUEST = *
+xdebug.show_error_trace = 1
+xdebug.show_local_vars = 1
+xdebug.max_nesting_level = 60
+
+sudo systemctl restart php72-php-fpm
+
+Дописываем рекурсию
+<?php
+require_once('vendor/autoload.php');
+
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+function req($count) {
+  $count += 1;
+  if ($count < 50) {
+    req($count);
+  } else {
+    trigger_error("off");
+  }
+
+}
+req(1);
+?>
+
+получаем результат:
+$count =
+/var/www/mysite.local/index.php:14:int 50
+
+на строке 51 
+51	0.0017	467312	trigger_error ( )
+
+сообщение
+Notice: off in /var/www/mysite.local/index.php on line 14
+
+Опять идем в настройки xdebug
+xdebug.trace_format = 0
+xdebug.auto_trace = 1
+xdebug.trace_output_dir = /var/www/mysite.local/log/traces
+xdebug.trace_output_name = trace.%c
+xdebug.collect_params = 4
+xdebug.collect_includes = 1
+xdebug.collect_return = 1
+xdebug.show_mem_delta = 1
+
+логирование (прикрепляю файлы логирования)
+
+Дополнительно добавляю вариант логирования генерации переменных
+
+<?php
+      use Monolog\Logger;
+      use Monolog\Handler\StreamHandler;
+
+      require_once('vendor/autoload.php');
+      error_reporting(E_ALL);
+      ini_set('display_errors', 1);
 
 
+      $start = microtime(true);
+      $mainLog = new Logger('main');
+
+      $sh = new StreamHandler('log/main.log', Logger::INFO);
+      $mainLog->pushHandler($sh);
+
+      $end = microtime(true);
+      sleep(3);
+
+      $memory = memory_get_usage();
+      $mainLog->info('После пробуждения занято памяти: ' . $memory);
 
 
+      $string1 = 'Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut';
 
+      $string2 = 'Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.';
+
+      echo $string1;
+      echo $string2;
+
+      $mainLog->debug('Генерация переменных заняла времени' . ($end - $start));
+
+      $end_script = microtime(true);
+      $mainLog->debug('Работа скрипта завершена за время' . ($end_script - $start));
+?>
 
 
 
