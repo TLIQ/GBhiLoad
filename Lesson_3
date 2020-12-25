@@ -1,0 +1,154 @@
+1. Установить выбранный форк MySQL Server.
+____________________________________________________
+Устанавливаю MAriaDB
+wget https://downloads.mariadb.com/MariaDB/mariadb_repo_setup
+chmod +x mariadb_repo_setup
+sudo ./mariadb_repo_setup
+sudo yum install MariaDB-server
+
+sudo systemctl enable mariadb
+sudo systemctl start mariadb
+sudo systemctl status mariadb
+
+Проверяем 
+=====
+mariadb.service - MariaDB 10.5.8 database server
+   Loaded: loaded (/usr/lib/systemd/system/mariadb.service; enabled; vendor preset: disabled)
+  Drop-In: /etc/systemd/system/mariadb.service.d
+           └─migrated-from-my.cnf-settings.conf
+   Active: active (running) since Thu 2020-12-24 22:46:56 UTC; 12s ago
+   
+   
+    Version: '10.5.8-MariaDB'
+    port: 3306
+======
+sudo nano /etc/my.cnf.d/server.cnf
+
+раскоментируем 
+  bind-address=0.0.0.0 длы того чтобы можно было принимать запросы на всех интерфейсах
+  skip-networking=0
+
+sudo systemctl restart mariadb
+
+Проверяем
+sudo netstat -tulpn | grep 3306 
+=====
+tcp        0      0 0.0.0.0:3306            0.0.0.0:*               LISTEN      4721/mariadbd   
+=====
+
+В ВМ добавляем порт для mysql
+Скриншот (ports_mysql)
+
+sudo mysql_secure_installation
+настраиваем пользователя
+
+в mySQL workbench подключаюсь к базе
+(скриншот workbench)
+
+____________________________________________________
+2. Портировать в него текущую структуру таблиц.
+____________________________________________________
+Загружаем файл db.sql
+в папку /home/vagrant
+
+заливаем в БД
+mysql -u root -p < db.sql
+
+туда же файлы
+explain_models.sql
+
+заливаем в БД
+mysql -u root -p skytech < explain_models.sql
+
+(скриншот DB port)
+
+В БД появились таблицы
+
+добавляем патч с ключами explain_models_patch_1.sql и выполняем запрос
+
+выполняем sql запрос
+=====
+  EXPLAIN SELECT * FROM
+  orderdetails d
+  INNER JOIN orders o ON d.orderNumber = o.orderNumber
+  INNER JOIN products p ON p.productCode = d.productCode
+  INNER JOIN productlines l ON p.productLine = l.productLine
+  INNER JOIN customers c on c.customerNumber = o.customerNumber
+  WHERE o.orderNumber = 10100
+===
+и видим, что после добавления ключей из explain_models_patch_1.sql значительно уменьшилось количество 
+общих обработанных строк ( с 9 млрд до 4 )
+типы таблиц изменились
+появились индексы
+
+выполним еще один запрос
+
+=====
+    EXPLAIN SELECT * FROM (
+    SELECT p.productName, p.productCode, p.buyPrice, l.productLine, p.status, l.status AS lineStatus FROM
+    products p
+    INNER JOIN productlines l ON p.productLine = l.productLine
+    UNION
+    SELECT v.variantName AS productName, v.productCode, p.buyPrice, l.productLine, p.status, l.status AS lineStatus FROM productvariants v
+    INNER JOIN products p ON p.productCode = v.productCode
+    INNER JOIN productlines l ON p.productLine = l.productLine
+    ) products
+    WHERE status = 'Active' AND lineStatus = 'Active' AND buyPrice BETWEEN 30 AND 50
+=====
+
+применим еще один патч explain_models_patch_2.sql
+и получаем что добавились необходимые ключи, но количество строк при обработке не изменилось, поэтому переписываем запрос
+
+=====
+    EXPLAIN SELECT * FROM (
+    SELECT p.productName, p.productCode, p.buyPrice, l.productLine, p.status, l.status as lineStatus FROM products p
+    INNER JOIN productlines AS l ON (p.productLine = l.productLine AND p.status = 'Active' AND l.status = 'Active') 
+    WHERE buyPrice BETWEEN 30 AND 50
+    UNION
+    SELECT v.variantName AS productName, v.productCode, p.buyPrice, l.productLine, p.status, l.status FROM productvariants v
+    INNER JOIN products p ON (p.productCode = v.productCode AND p.status = 'Active') 
+    INNER JOIN productlines l ON (p.productLine = l.productLine AND l.status = 'Active')
+    WHERE
+    v.buyPrice BETWEEN 30 AND 50
+    ) product
+=====
+результат улучшился
+
+значит важно оптимизровать и сам sql запрос
+
+____________________________________________________
+3. Какие ситуации, вызывающие рост количества запросов, могут случаться на сервере? Мы рассмотрели не все.
+____________________________________________________
+    
+- Плохой код, не оптимизированные запросы, плохая оптимизация БД
+- Различные задержки при соединении с БД
+- Отсутствие кэширования
+- Отсутствие индексации таблиц или неправильная индексация
+- Непредвиденная нагрузка
+____________________________________________________         
+4.* В каких случаях индекс в MySQL не будет применятся, даже если он доступен и выборка должна использовать его?
+____________________________________________________
+В некоторых случаях MySQL не использует индекс, даже если это возможно. Несколько примеров таких ситуаций приведено ниже:
+
+- Если использование индекса требует от MySQL прохода более чем по 30% строк в данной таблице (в таких случаях просмотр таблицы, по всей видимости, окажется намного быстрее, так как потребуется выполнить меньше операций поиска). Следует учитывать, что если подобный запрос использует LIMIT по отношению только к извлекаемой части строк, то MySQL будет применять индекс в любом случае, так как небольшое количество строк можно найти намного быстрее, чтобы вернуть результат.
+- Если диапазон изменения индекса может содержать величины NULL при использовании выражений ORDER BY ... DESC.
+____________________________________________________      
+5.* Как принудительно применить индекс?
+____________________________________________________
+Использовать Index Hints
+
+===
+    tbl_name [[AS] alias] [index_hint_list]
+
+    index_hint_list:
+        index_hint [index_hint] ...
+
+    index_hint:
+        USE {INDEX|KEY}
+          [FOR {JOIN|ORDER BY|GROUP BY}] ([index_list])
+      | {IGNORE|FORCE} {INDEX|KEY}
+          [FOR {JOIN|ORDER BY|GROUP BY}] (index_list)
+
+    index_list:
+        index_name [, index_name] ...
+===
