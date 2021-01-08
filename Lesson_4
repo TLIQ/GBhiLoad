@@ -1,0 +1,113 @@
+1. Собрать две виртуальные машины с установленным MySQL-сервером.
+--------------------------------------------------------------------
+- В Virtual box клонирую с помощью clone ВМ
+- Создаю Nat network 
+hb_hl
+10.0.2.0/24
+
+- дальше иду в настройки клона
+Network -> NAT network выбираю созданный
+так же сбрасываю МАС адрес
+меняю порты (скриншот clone_ports)
+
+sudo nano /etc/hostname => gb_hl2.local (для клона)
+sudo reboot
+
+sudo nano /etc/hostname => gb_hl1.local (для мастера)
+sudo reboot
+
+master 192.168.57.5
+slave 192.168.57.6
+
+в итоге удалось настроить как в уроке через host-only adapter
+--------------------------------------------------------------------
+2. Развернуть репликацию на этих двух серверах.
+--------------------------------------------------------------------
+в мастере
+sudo nano /etc/my.cnf
+///
+      #
+      # This group is read both by the client and the server
+      # use it for options that affect everything
+      #
+      [client-server]
+
+      #
+      # include *.cnf from the config directory
+      #
+      !includedir /etc/my.cnf.d
+
+      [mysqld]
+        server-id=1
+        log_bin=mysql-bin.log
+        binlog_do_db=skytech
+///
+sudo systemctl restart mariadb.service
+
+mysql -u root -p
+
+MariaDB [(none)]> GRANT REPLICATION SLAVE ON *.* TO 'slave_user'@'%' IDENTIFIED BY 'slave_user';
+MariaDB [(none)]> FLUSH PRIVILEGES;
+MariaDB [(none)]> drop database skytech;
+
+mysql -u root -p < db.sql
+
+На SLAVE
+mysql -u root -p
+drop database skytech;
+
+На MASTER
+
+use skytech;
+flush tables with read lock;
+show master status;
++------------------+-----------+--------------+------------------+
+| File             | Position  | Binlog_Do_DB | Binlog_Ignore_DB |
++------------------+-----------+--------------+------------------+
+| mysql-bin.000002 | 142176172 | skytech      |                  |
++------------------+-----------+--------------+------------------+
+
+делаем dumo базы
+mysqldump -u root -p skytech > skytech.bck
+
+-rw-rw-r--  1 vagrant vagrant 129274256 Jan  8 16:35 skytech.bck
+с помощью transmit перетаскиваем skytech.bck на SLAVE
+
+На SLAVE
+create database skytech;
+mysql -u root -p skytech < skytech.bc
+
+sudo nano /etc/my.cnf.d/server.cnf
+
+///
+  [mysqld]
+  server-id = 2
+  relay-log = mysql-relay-bin.log
+  log_bin	= mysql-bin.log
+  replicate_do_db	= skytech
+///
+
+mysql -u root -p
+ use skytech;
+ MariaDB [skytech]> CHANGE MASTER TO MASTER_HOST='192.168.57.5', MASTER_USER='slave_user', MASTER_PASSWORD='slave_user', MASTER_LOG_FILE='mysql-bin.000004', MASTER_LOG_POS=342;
+ MariaDB [skytech]> START SLAVE;
+ MariaDB [skytech]> show slave status;
+ 
+ видим
+ Slave has read all relay log; waiting for more update
+ 
+ 
+
+На MSATER 
+mysql -u root -p 
+MariaDB [(none)]> use skytech;
+MariaDB [skytech]> unlock tables;
+
+
+
+
+проверяю репликацию
+скриншот test_replication
+
+ 
+ 
