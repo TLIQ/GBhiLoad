@@ -1,0 +1,88 @@
+1. Установить RabbitMQ.
+------------------------------
+php -r "copy('https://getcomposer.org/installer', 'composer-setup.php');"
+php composer-setup.php
+php -r "unlink('composer-setup.php');"
+sudo mv composer.phar /usr/bin/composer
+cd /var/www/mysite.local/      
+composer require cboden/ratchet
+
+создаем server.php (в приложении)
+создаем chat.php (в приложении)
+
+sudo yum install telnet
+telnet 127.0.0.1 8181 
+
+результат:
+screenshot1
+screenshot2
+
+sudo yum install rabbitmq-server
+sudo rabbitmq-plugins enable rabbitmq_management
+sudo systemctl restart rabbitmq-server.service
+sudo yum install php72-php-pecl-amqp
+
+ sudo netstat -utlpn
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    
+tcp        0      0 0.0.0.0:111             0.0.0.0:*               LISTEN      347/rpcbind         
+tcp        0      0 0.0.0.0:80              0.0.0.0:*               LISTEN      788/nginx: master p 
+tcp        0      0 0.0.0.0:4369            0.0.0.0:*               LISTEN      2787/epmd           
+tcp        0      0 0.0.0.0:8081            0.0.0.0:*               LISTEN      788/nginx: master p 
+tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      655/sshd            
+tcp        0      0 0.0.0.0:15672           0.0.0.0:*               LISTEN      2803/beam           
+tcp        0      0 127.0.0.1:25            0.0.0.0:*               LISTEN      777/master          
+tcp        0      0 0.0.0.0:25672           0.0.0.0:*               LISTEN      2803/beam           
+tcp        0      0 0.0.0.0:3306            0.0.0.0:*               LISTEN      710/mariadbd        
+tcp        0      0 0.0.0.0:11211           0.0.0.0:*               LISTEN      656/memcached       
+tcp6       0      0 :::111                  :::*                    LISTEN      347/rpcbind         
+tcp6       0      0 :::80                   :::*                    LISTEN      788/nginx: master p 
+tcp6       0      0 :::4369                 :::*                    LISTEN      2787/epmd           
+tcp6       0      0 :::22                   :::*                    LISTEN      655/sshd            
+tcp6       0      0 ::1:25                  :::*                    LISTEN      777/master          
+tcp6       0      0 :::5672                 :::*                    LISTEN      2803/beam           
+tcp6       0      0 :::11211                :::*                    LISTEN      656/memcached       
+udp        0      0 0.0.0.0:111             0.0.0.0:*                           347/rpcbind         
+udp        0      0 127.0.0.1:323           0.0.0.0:*                           384/chronyd         
+udp        0      0 0.0.0.0:913             0.0.0.0:*                           347/rpcbind         
+udp        0      0 0.0.0.0:11211           0.0.0.0:*                           656/memcached       
+udp        0      0 0.0.0.0:68              0.0.0.0:*                           481/dhclient        
+udp        0      0 0.0.0.0:68              0.0.0.0:*                           434/dhclient        
+udp6       0      0 :::111                  :::*                                347/rpcbind         
+udp6       0      0 ::1:323                 :::*                                384/chronyd         
+udp6       0      0 :::913                  :::*                                347/rpcbind         
+udp6       0      0 :::11211                :::*                                656/memcached       
+
+результат
+screensho3
+
+
+------------------------------
+2. Создать несколько очередей.
+------------------------------
+
+добавляем очередь в UI
+screenshot4
+дальше идем в index.php и кладем в очередь чообщение
+в прикрепленном index.php
+screenshot 5
+
+
+Exchange	(AMQP default)
+Routing Key	coffee
+Redelivered	○
+Properties	
+Payload
+16 bytes
+Encoding: string
+one latte please
+
+
+
+
+------------------------------
+3. Реализовать цепочку «Заказ еды — оплата — доставка — отзыв клиента». Сколько понадобится очередей?
+------------------------------
+
+прикрепленный indexCoffee.php
+и screenshot6
