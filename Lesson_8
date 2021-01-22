@@ -1,0 +1,29 @@
+1. Установить Zabbix Server.
+----------------------------
+sudo apt install zabbix-server-mysql zabbix-frontend-php
+
+mysql>
+CREATE DATABASE zabbix;
+ALTER DATABASE zabbix CHARACTER SET utf8 COLLATE utf8_general_ci;
+GRANT ALL on zabbix.* to zabbix@localhost IDENTIFIED BY 'zabbix';
+FLUSH PRIVILEGES;
+
+cd /usr/share/zabbix-server-mysql/
+zcat data.sql.gz | mysql -u zabbix -p zabbix
+zcat schema.sql.gz | mysql -u zabbix -p zabbix
+zcat images.sql.gz | mysql -u zabbix -p zabbix
+
+sudo nano /etc/zabbix/zabbix_server.conf
+DBHost=localhost
+DBName=zabbix
+DBUser=zabbix
+DBPassword=zabbix
+
+sudo nano /etc/nginx/conf.d/zabbix.conf
+----------------------------
+2. Добавить шаблон мониторинга HTTP-соединений.
+----------------------------
+
+скриншоты в приложении
+
+дальше не получилось, валиться куча ошибок, перестал работать zabbix
