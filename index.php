@@ -17,9 +17,9 @@
       $channel->queue_declare('Coffee', false, true, false, false);
 
       // создаем сообщение
-      $msg = new AMQPMessage($_POST['type']);
+      $msg = new AMQPMessage("one latte please");
       // размещаем сообщение в очереди
-      $channel->basic_publish($msg, '', 'Coffee');
+      $channel->basic_publish($msg, '', 'coffee');
 
       // закрываем соединения
       $channel->close();
